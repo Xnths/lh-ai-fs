@@ -1,61 +1,29 @@
-# BS Detector
-
-A multi-agent AI pipeline that verifies legal briefs against supporting documents — catching fabricated quotes, unsupported citations, and factual contradictions.
+# BS Detector — AI pipeline that verifies legal briefs for fabricated quotes, unsupported citations, and factual contradictions.
 
 ---
 
-## Setup
-
-### Requirements
-
-- Python 3.11+
-- [Ollama](https://ollama.com) with `llama3.2` pulled locally
-- Node.js 18+
-
-### Backend
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn main:app --reload --port 8002
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Frontend runs at `http://localhost:5175`.  
-API runs at `http://localhost:8002`.
-
-### Docker (alternative)
+## Setup (Docker)
 
 ```bash
 cp .env.example .env
+# Edit .env if needed (default uses Ollama with llama3.2)
 docker compose up --build
 ```
+
+- Frontend: http://localhost:5175
+- API: http://localhost:8002
 
 ---
 
 ## Configuration
 
-Edit `backend/.env`:
-
-```env
-LLM_PROVIDER=ollama          # or: openai
-OLLAMA_MODEL=llama3.2
-OLLAMA_BASE_URL=http://localhost:11434
-OPENAI_API_KEY=              # required only if LLM_PROVIDER=openai
-OPENAI_MODEL=gpt-4o
-```
-
-The pipeline is LLM-agnostic. Switching providers requires only a `.env` change — no code changes.
+| Variable | Default | Description |
+|---|---|---|
+| LLM_PROVIDER | ollama | `ollama` or `openai` |
+| OLLAMA_MODEL | llama3.2 | Model name for Ollama |
+| OLLAMA_BASE_URL | http://host.docker.internal:11434 | Ollama host (use host.docker.internal in Docker on Linux) |
+| OPENAI_API_KEY | (empty) | Required only if LLM_PROVIDER=openai |
+| OPENAI_MODEL | gpt-4o | Model name for OpenAI |
 
 ---
 
@@ -85,8 +53,8 @@ POST /analyze
     ├── QuoteChecker          LLM
     │     Verifies accuracy of quoted text attributed to cited sources
     │
-    ├── DateCrossChecker      Deterministic regex
-    │     Extracts dates from all documents, flags mismatches
+    ├── DateCrossChecker      Deterministic (no LLM call)
+    │     Extracts dates via regex, flags mismatches across documents
     │
     ├── FactCrossChecker      LLM (one claim × one document per call)
     │     Verifies explicit factual claims against supporting documents
@@ -95,28 +63,56 @@ POST /analyze
           Synthesizes top findings into one paragraph for a judge
 ```
 
-Agents pass structured JSON between steps — never raw text.
+Agents pass structured JSON between steps — never raw text blobs.
 
-### Documents
+---
 
-Located in `backend/documents/`:
+## Running Evals
 
-```
-motion_for_summary_judgment.txt   ← primary document (MSJ)
-police_report.txt
-medical_records_excerpt.txt
-witness_statement.txt
+```bash
+docker compose exec backend python run_evals.py
 ```
 
-### API
+### Ground Truth
+
+| ID | Finding | Category |
+|---|---|---|
+| f1 | MSJ states incident on March 14, 2021; all supporting documents state March 12, 2021 | factual_consistency |
+| f2 | MSJ claims Rivera was not wearing PPE; police report and witness confirm he was | factual_consistency |
+| f3 | Quote attributed to _Privette v. Superior Court_ is fabricated — "never liable" does not appear in the case | quote_accuracy |
+| f4 | MSJ claims Harmon did not direct operations; police report and witness statement confirm Donner directed the crew and dismissed a safety warning | factual_consistency |
+
+### Metrics
+
+$$\text{Precision} = \frac{|\text{TP}|}{|\text{TP}| + |\text{FP}|}$$
+
+$$\text{Recall} = \frac{|\text{TP}|}{|F^*|}$$
+
+$$\text{Hallucination Rate} = \frac{|\text{FP}|}{|\text{TP}| + |\text{FP}|}$$
+
+where $F^*$ is the ground truth set.
+
+### Current Results (`llama3.2`)
+
+| Metric | Value |
+|---|---|
+| Recall | 0.75 |
+| Precision | ~0.75 |
+| Hallucination Rate | ~0.25 |
+
+### Model Upgrade Criterion
+
+Accept upgrade only if $\Delta\text{Recall} > 0$ with $p < 0.05$ under bootstrap resampling ($B = 1000$).
+
+---
+
+## API
 
 ```
 POST /analyze
 ```
 
-No request body required. Loads documents from `backend/documents/` automatically.
-
-Response:
+No request body. Returns:
 
 ```json
 {
@@ -131,54 +127,6 @@ Response:
 
 ---
 
-## Running Evals
-
-```bash
-cd backend
-python run_evals.py
-```
-
-### Ground Truth
-
-The eval harness measures against 4 known findings in _Rivera v. Harmon Construction Group_:
-
-| ID  | Finding                                                                                                                                          | Category |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
-| f1  | MSJ states incident on March 14, 2021; all supporting documents state March 12, 2021                                                             | factual  |
-| f2  | MSJ claims Rivera was not wearing PPE; police report and witness confirm he was                                                                  | factual  |
-| f3  | Quote attributed to _Privette v. Superior Court_ is fabricated — "never liable" does not appear in the case                                      | quote    |
-| f4  | MSJ claims Harmon did not direct operations; police report and witness statement confirm Donner directed the crew and dismissed a safety warning | factual  |
-
-### Metrics
-
-$$\text{Precision} = \frac{|F \cap F^*|}{|F|}$$
-
-$$\text{Recall} = \frac{|F \cap F^*|}{|F^*|}$$
-
-$$\text{Hallucination Rate} = \frac{|F \setminus F^*|}{|F|}$$
-
-where $F$ is the set of flags returned by the pipeline and $F^*$ is the ground truth set.
-
-### Current Results (`llama3.2`)
-
-| Metric             | Value |
-| ------------------ | ----- |
-| Recall             | 0.75  |
-| Precision          | ~0.75 |
-| Hallucination Rate | ~0.25 |
-
-f2 (PPE) is not detected by `llama3.2`. The date mismatch (f1) is detected deterministically via regex, independent of model capability.
-
-### Model Upgrade Criterion
-
-Run evals on candidate model $M_{\theta'}$. Accept upgrade only if:
-
-$$\Delta\text{Recall} = \text{Recall}_{\theta'} - \text{Recall}_{\theta} > 0$$
-
-with $p < 0.05$ under bootstrap resampling ($B = 1000$).
-
----
-
 ## Design Decisions
 
-See [`reflection.md`](./reflection.md).
+See [reflection.md](./reflection.md) for full tradeoff analysis.

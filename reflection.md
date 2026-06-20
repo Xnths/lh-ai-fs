@@ -73,3 +73,12 @@ $f_2$ was not detected by the LLM. The model returned `contradicted: false` when
 ## What I would not change
 
 The Strategy Pattern for LLM providers. Decoupling the inference engine from the pipeline is the correct abstraction regardless of scale. It cost nothing and enables the model upgrade path without architectural debt.
+
+## Docker deployment notes
+
+The Ollama client library does not read OLLAMA_BASE_URL automatically — it defaults to localhost.
+On Linux, Docker containers cannot reach the host via localhost.
+Fix: instantiate `ollama.Client(host=base_url)` explicitly in `OllamaProvider.__init__`.
+Additionally, `extra_hosts: host.docker.internal:host-gateway` must be set in docker-compose.yml
+for the container to resolve the host machine's address on Linux/Fedora.
+This would not be required on macOS or Windows Docker Desktop, which resolve host.docker.internal automatically.
