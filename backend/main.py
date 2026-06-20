@@ -1,6 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
 
 app = FastAPI()
 
@@ -25,6 +26,6 @@ def load_documents() -> dict[str, str]:
 
 @app.post("/analyze")
 async def analyze():
-    documents = load_documents()
+    documents = load_documents()  # noqa: F841
     # TODO: Build your multi-agent pipeline here
     return {"report": None}
