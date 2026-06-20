@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 
 import ollama
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
@@ -29,7 +30,6 @@ class OllamaProvider(LLMProvider):
 
 class OpenAIProvider(LLMProvider):
     def __init__(self):
-        from openai import OpenAI
         self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self._model = os.getenv("OPENAI_MODEL", "gpt-4o")
 
