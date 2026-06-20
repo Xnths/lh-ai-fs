@@ -16,7 +16,8 @@ class LLMProvider(ABC):
 
 class OllamaProvider(LLMProvider):
     def __init__(self):
-        self._client = ollama
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        self._client = ollama.Client(host=base_url)
         self._model = os.getenv("OLLAMA_MODEL", "llama3.2")
 
     def complete(self, messages: list[dict], temperature: float = 0) -> str:

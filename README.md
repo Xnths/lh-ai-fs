@@ -1,38 +1,29 @@
 # BS Detector
 
-Legal briefs lie. Not always intentionally — but they do. They cite cases that don't say what they claim. They quote authority with words quietly removed. They state facts that contradict the documents sitting right next to them.
+A multi-agent AI pipeline that verifies legal briefs against supporting documents — catching fabricated quotes, unsupported citations, and factual contradictions.
 
-Your task: build an AI pipeline that catches it.
+---
 
 ## Setup
 
-### Docker (recommended)
+### Requirements
 
-```bash
-cp .env.example .env      # Add your OpenAI API key
-docker compose up --build
-```
+- Python 3.11+
+- [Ollama](https://ollama.com) with `llama3.2` pulled locally
+- Node.js 18+
 
-The API runs at `http://localhost:8002`. The UI runs at `http://localhost:5175`.
-
-Both services hot-reload — edit files on your host and changes appear automatically.
-
-### Manual Setup
-
-#### Backend
+### Backend
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env      # Add your OpenAI API key
-uvicorn main:app --reload
+cp .env.example .env
+uvicorn main:app --reload --port 8002
 ```
 
-The API runs at `http://localhost:8002`.
-
-#### Frontend
+### Frontend
 
 ```bash
 cd frontend
@@ -40,61 +31,154 @@ npm install
 npm run dev
 ```
 
-The UI runs at `http://localhost:5175`.
+Frontend runs at `http://localhost:5175`.  
+API runs at `http://localhost:8002`.
 
-## The Task
+### Docker (alternative)
 
-Inside `backend/documents/` you'll find a small case file: a Motion for Summary Judgment in a personal injury lawsuit (*Rivera v. Harmon Construction Group*), along with a police report, medical records, and a witness statement.
+```bash
+cp .env.example .env
+docker compose up --build
+```
 
-Build a multi-agent pipeline that analyzes these documents and produces a structured verification report. Your pipeline should:
+---
 
-**Core (Tier 1)**
-- Extract all citations from the Motion for Summary Judgment
-- For each citation, assess whether the cited authority actually supports the proposition as stated
-- Flag direct quotes for accuracy
-- Produce structured output (JSON) — not a wall of prose
+## Configuration
 
-**Expected (Tier 2)**
-- Build an eval harness that measures your pipeline's output quality. It must be runnable via a single command (e.g., `python run_evals.py`). At minimum, measure precision (avoiding false flags), recall (catching known flaws), and hallucination rate (not fabricating findings). You choose the approach — there's no prescribed framework or tooling.
-- Cross-document consistency check: compare facts stated in the MSJ against the police report, medical records, and witness statement
-- Express uncertainty appropriately — "could not verify" rather than fabricating a finding
-- Pass structured data between agents, not raw text blobs
+Edit `backend/.env`:
 
-**Stretch (Tier 3)**
-- At least 4 well-defined agents with distinct, non-overlapping roles
-- A confidence scoring layer: each flag rated by how certain the pipeline is, with reasoning
-- A judicial memo agent: synthesizes the top findings into a one-paragraph summary written for a judge
-- Agent orchestration that handles failures gracefully
-- A UI that displays the report in a structured, readable way — not just raw JSON
-- A reflection document explaining the tradeoffs you made and what you'd do differently
+```env
+LLM_PROVIDER=ollama          # or: openai
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434
+OPENAI_API_KEY=              # required only if LLM_PROVIDER=openai
+OPENAI_MODEL=gpt-4o
+```
 
-## Deliverables
+The pipeline is LLM-agnostic. Switching providers requires only a `.env` change — no code changes.
 
-1. A working `POST /analyze` endpoint that returns a structured verification report
-2. Agent code with clear, named agents and explicit prompts
-3. A runnable eval suite with instructions in your README on how to run it
-4. A brief reflection (in the repo or as a separate file) on your design decisions and tradeoffs
+---
 
-## Time
+## Architecture
 
-6 hours. This is intentionally scoped beyond what most candidates will finish. Where you invest your time matters more than finishing everything. A well-tested pipeline that catches 3 flaws is stronger than an untested one that attempts 10.
+### Strategy Pattern — LLM Provider
 
-## Evals
+```
+LLMProvider (ABC)
+├── OllamaProvider   ← default
+└── OpenAIProvider   ← requires OPENAI_API_KEY
+```
 
-We run your eval suite as part of our review. Document how to run it in your README. We care more about thoughtful metric design than perfect scores — an eval that honestly reports 60% recall tells us more than one that reports 100% on cherry-picked cases.
+`get_provider()` reads `LLM_PROVIDER` at runtime and returns the correct implementation.
 
-## AI Usage
+### Agent Pipeline
 
-Use everything. That's the job. We want to see how you use it, not whether you do.
+```
+POST /analyze
+    │
+    ├── CitationExtractor     LLM + few-shot prompting
+    │     Extracts citations and attributed quotes from MSJ
+    │
+    ├── CitationVerifier      LLM (one call per citation)
+    │     Verifies each citation supports its stated proposition
+    │
+    ├── QuoteChecker          LLM
+    │     Verifies accuracy of quoted text attributed to cited sources
+    │
+    ├── DateCrossChecker      Deterministic regex
+    │     Extracts dates from all documents, flags mismatches
+    │
+    ├── FactCrossChecker      LLM (one claim × one document per call)
+    │     Verifies explicit factual claims against supporting documents
+    │
+    └── JudicialMemo          LLM
+          Synthesizes top findings into one paragraph for a judge
+```
 
-## Evaluation
+Agents pass structured JSON between steps — never raw text.
 
-We are evaluating:
+### Documents
 
-1. How you decompose the problem into agents
-2. How precisely you write prompts
-3. The quality of your eval approach — do you measure what matters?
-4. How far you get through the spec
-5. How honest your reflection is
+Located in `backend/documents/`:
 
-Not lines of code.
+```
+motion_for_summary_judgment.txt   ← primary document (MSJ)
+police_report.txt
+medical_records_excerpt.txt
+witness_statement.txt
+```
+
+### API
+
+```
+POST /analyze
+```
+
+No request body required. Loads documents from `backend/documents/` automatically.
+
+Response:
+
+```json
+{
+  "report": {
+    "citation_verification": [...],
+    "quote_accuracy": [...],
+    "factual_consistency": [...],
+    "judicial_memo": "..."
+  }
+}
+```
+
+---
+
+## Running Evals
+
+```bash
+cd backend
+python run_evals.py
+```
+
+### Ground Truth
+
+The eval harness measures against 4 known findings in _Rivera v. Harmon Construction Group_:
+
+| ID  | Finding                                                                                                                                          | Category |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| f1  | MSJ states incident on March 14, 2021; all supporting documents state March 12, 2021                                                             | factual  |
+| f2  | MSJ claims Rivera was not wearing PPE; police report and witness confirm he was                                                                  | factual  |
+| f3  | Quote attributed to _Privette v. Superior Court_ is fabricated — "never liable" does not appear in the case                                      | quote    |
+| f4  | MSJ claims Harmon did not direct operations; police report and witness statement confirm Donner directed the crew and dismissed a safety warning | factual  |
+
+### Metrics
+
+$$\text{Precision} = \frac{|F \cap F^*|}{|F|}$$
+
+$$\text{Recall} = \frac{|F \cap F^*|}{|F^*|}$$
+
+$$\text{Hallucination Rate} = \frac{|F \setminus F^*|}{|F|}$$
+
+where $F$ is the set of flags returned by the pipeline and $F^*$ is the ground truth set.
+
+### Current Results (`llama3.2`)
+
+| Metric             | Value |
+| ------------------ | ----- |
+| Recall             | 0.75  |
+| Precision          | ~0.75 |
+| Hallucination Rate | ~0.25 |
+
+f2 (PPE) is not detected by `llama3.2`. The date mismatch (f1) is detected deterministically via regex, independent of model capability.
+
+### Model Upgrade Criterion
+
+Run evals on candidate model $M_{\theta'}$. Accept upgrade only if:
+
+$$\Delta\text{Recall} = \text{Recall}_{\theta'} - \text{Recall}_{\theta} > 0$$
+
+with $p < 0.05$ under bootstrap resampling ($B = 1000$).
+
+---
+
+## Design Decisions
+
+See [`reflection.md`](./reflection.md).
