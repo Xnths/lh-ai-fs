@@ -269,7 +269,56 @@ const CSS = `
     margin-top: 8px;
     font-family: 'IBM Plex Mono', monospace;
   }
+
+  .confidence-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .confidence-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-family: 'Inter', sans-serif;
+    white-space: nowrap;
+  }
+
+  .confidence-pct {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .confidence-pct.conf-high  { color: #2E7D4F; }
+  .confidence-pct.conf-mid   { color: #D4850A; }
+  .confidence-pct.conf-low   { color: #C0392B; }
+
+  .confidence-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'IBM Plex Mono', monospace;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
 `
+
+function ConfidenceDisplay({ confidence, confidenceReasoning }) {
+  if (confidence == null) return null
+  const pct = Math.round(confidence * 100)
+  const cls = confidence >= 0.8 ? 'conf-high' : confidence >= 0.5 ? 'conf-mid' : 'conf-low'
+  return (
+    <div>
+      <div className="confidence-row">
+        <span className="confidence-label">Confidence</span>
+        <span className={`confidence-pct ${cls}`}>{pct}%</span>
+      </div>
+      {confidenceReasoning && <div className="confidence-note">{confidenceReasoning}</div>}
+    </div>
+  )
+}
 
 function verdictBadge(verdict) {
   const map = {
@@ -302,6 +351,7 @@ function CitationCard({ item }) {
       </div>
       {item.proposition && <div className="card-meta">Proposition: {item.proposition}</div>}
       {item.reasoning && <div className="card-reasoning">{item.reasoning}</div>}
+      <ConfidenceDisplay confidence={item.confidence} confidenceReasoning={item.confidence_reasoning} />
     </div>
   )
 }
@@ -321,6 +371,7 @@ function QuoteCard({ item }) {
         </>
       )}
       {item.issue && <div className="card-reasoning">{item.issue}</div>}
+      <ConfidenceDisplay confidence={item.confidence} confidenceReasoning={item.confidence_reasoning} />
     </div>
   )
 }
@@ -336,6 +387,7 @@ function ContradictionCard({ item }) {
       {item.contradicting_source && <div className="card-meta">Contradicted by: {item.contradicting_source}</div>}
       {item.contradicting_text && <div className="card-quote">"{item.contradicting_text}"</div>}
       {item.explanation && <div className="card-reasoning">{item.explanation}</div>}
+      <ConfidenceDisplay confidence={item.confidence} confidenceReasoning={item.confidence_reasoning} />
     </div>
   )
 }

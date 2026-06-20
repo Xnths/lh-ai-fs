@@ -58,7 +58,14 @@ def citation_verifier(citations: list[dict], llm: LLMProvider) -> list[dict]:
                     "Return ONLY a JSON object with exactly these keys: "
                     '{"citation": "<citation>", '
                     '"verdict": "<supported|not_supported|could_not_verify>", '
-                    '"reasoning": "<one sentence explanation>"}'
+                    '"reasoning": "<one sentence explanation>", '
+                    '"confidence": <float 0.0-1.0>, '
+                    '"confidence_reasoning": "<one sentence on confidence>"}'
+                    "\n\nConfidence guide:"
+                    "\n- 0.9-1.0: case is well-known, certain of holding"
+                    "\n- 0.6-0.9: case exists but exact holding uncertain"
+                    "\n- 0.3-0.6: case may exist, cannot verify holding"
+                    "\n- 0.0-0.3: case unknown or does not exist"
                 ),
             },
             {
@@ -102,7 +109,14 @@ def quote_checker(
                     "Return ONLY a JSON object with exactly these keys: "
                     '{"citation": "<citation>", "quote": "<the quote>", '
                     '"verdict": "<accurate|inaccurate|could_not_verify>", '
-                    '"reasoning": "<one sentence explanation>"}'
+                    '"reasoning": "<one sentence explanation>", '
+                    '"confidence": <float 0.0-1.0>, '
+                    '"confidence_reasoning": "<one sentence on confidence>"}'
+                    "\n\nConfidence guide:"
+                    "\n- 0.9-1.0: certain quote is fabricated or accurate"
+                    "\n- 0.6-0.9: know case well enough for moderate certainty"
+                    "\n- 0.3-0.6: recognize case but cannot verify wording"
+                    "\n- 0.0-0.3: no knowledge of the case text"
                 ),
             },
             {
@@ -149,6 +163,11 @@ def date_cross_checker(documents: dict[str, str]) -> list[dict]:
                         "contradicting_document": doc_name,
                         "contradicting_text": f"Document states date as {doc_str}.",
                         "severity": "high",
+                        "confidence": 1.0,
+                        "confidence_reasoning": (
+                            "Deterministic date comparison"
+                            " — exact string match from document text."
+                        ),
                     })
     return list({r["fact_in_msj"]: r for r in results}.values())
 
@@ -186,7 +205,14 @@ def fact_cross_checker(
                         '{"claim": "<the claim>", "contradicted": <true|false>, '
                         '"contradicting_text": "<exact sentence from document '
                         'that contradicts the claim, or null>", '
-                        '"severity": "<high|medium|low>"}'
+                        '"severity": "<high|medium|low>", '
+                        '"confidence": <float 0.0-1.0>, '
+                        '"confidence_reasoning": "<one sentence on confidence>"}'
+                        "\n\nConfidence guide:"
+                        "\n- 0.9-1.0: contradiction is explicit and unambiguous"
+                        "\n- 0.6-0.9: present but requires interpretation"
+                        "\n- 0.3-0.6: partial contradiction, not fully explicit"
+                        "\n- 0.0-0.3: contradiction is inferred, not stated"
                     ),
                 },
                 {
@@ -207,6 +233,8 @@ def fact_cross_checker(
                         "contradicting_document": doc_name,
                         "contradicting_text": result.get("contradicting_text", ""),
                         "severity": result.get("severity", "medium"),
+                        "confidence": result.get("confidence", 0.5),
+                        "confidence_reasoning": result.get("confidence_reasoning", ""),
                     })
             except json.JSONDecodeError:
                 pass

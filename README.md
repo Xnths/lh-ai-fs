@@ -25,6 +25,8 @@ docker compose up --build
 | OPENAI_API_KEY | (empty) | Required only if LLM_PROVIDER=openai |
 | OPENAI_MODEL | gpt-4o | Model name for OpenAI |
 
+> **To use OpenAI:** set `LLM_PROVIDER=openai` and `OPENAI_API_KEY=sk-...` in `.env`, then restart with `docker compose up`. The API key alone is not enough — `get_provider()` reads `LLM_PROVIDER` first and defaults to Ollama even if the key is present.
+
 ---
 
 ## Architecture
